@@ -1,3 +1,5 @@
+![MariaDB Backup Manager](./art/mariadb-backup-logo.svg)
+
 # MariaDB Backup Manager
 
 ## Overview
