@@ -17,8 +17,9 @@ This document provides comprehensive documentation for the MariaDB Backup Manage
 
 - **Advanced Recovery Options:**
   - Full backup restoration
+  - Incremental Backup restoration
   - Point-in-time recovery **(PITR)**
-  - Binary log application
+  
 
 - **Security:**
   - Encryption support (AES-256)
