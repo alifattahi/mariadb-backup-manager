@@ -29,6 +29,7 @@ RETENTION_FULL=4     # Number of full backups to keep
 RETENTION_INCR=14    # Number of incremental backups to keep
 BACKUP_TYPE="full"
 BINLOG_ONLY=0
+MAX_BINLOG_DAYS_TO_BACKUP="-2"
 MIN_DISK_SPACE=5     # Minimum disk space percentage required
 PITR_ONLY=0
 LOG_FILE=""
@@ -857,7 +858,7 @@ backup_binlogs() {
     # Find all binary logs in the binary log directory
     log DEBUG "Looking for binary logs with pattern: ${binlog_prefix}.*"
     local binlog_files
-    binlog_files=$(find "$binlog_dir" -name "${binlog_prefix}.*" -type f)
+    binlog_files=$(find "$binlog_dir" -name "${binlog_prefix}.*" -type f -mtime $MAX_BINLOG_DAYS_TO_BACKUP)
     
     if [[ -z "$binlog_files" ]]; then
         log WARN "No binary log files found in $binlog_dir"
