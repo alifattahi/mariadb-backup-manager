@@ -30,7 +30,7 @@ RETENTION_INCR=14    # Number of incremental backups to keep
 BACKUP_TYPE="full"
 BINLOG_ONLY=0
 MAX_BINLOG_DAYS_TO_BACKUP="-2"
-MIN_DISK_SPACE=5     # Minimum disk space percentage required
+MIN_DISK_SPACE=1     # Minimum disk space percentage required
 PITR_ONLY=0
 LOG_FILE=""
 LOG_LEVEL="INFO"     # DEBUG, INFO, WARN, ERROR
@@ -798,10 +798,13 @@ perform_incremental_backup() {
 }
 
 # Function to backup binary logs
+# Function to backup binary logs
 backup_binlogs() {
-    local timestamp
-    timestamp=$(date +%Y%m%d%H%M%S)
-    local binlog_backup_dir="$BACKUP_DIR/binlogs_$timestamp"
+    # Use the current date but with end-of-day timestamp (23:59:59) for directory naming
+    local current_date
+    current_date=$(date +%Y%m%d)
+    local end_of_day="${current_date}235959"  # Append 23:59:59 to the date
+    local binlog_backup_dir="$BACKUP_DIR/binlogs_$end_of_day"
     
     log INFO "Starting binary log backup to $binlog_backup_dir"
     
@@ -815,8 +818,16 @@ backup_binlogs() {
         return 1
     fi
     
-    # Create backup directory
-    mkdir -p "$binlog_backup_dir"
+    # Create backup directory if it doesn't exist
+    if [[ ! -d "$binlog_backup_dir" ]]; then
+        mkdir -p "$binlog_backup_dir"
+        log INFO "Created new daily binary log backup directory: $binlog_backup_dir"
+    else
+        log INFO "Using existing daily binary log backup directory: $binlog_backup_dir"
+        # We'll clean up existing binlogs before copying new ones
+        log INFO "Cleaning up existing binary logs in the directory"
+        rm -f "$binlog_backup_dir"/*.0* 2>/dev/null
+    fi
     
     # Get current binary log information
     local mysql_cmd
@@ -883,21 +894,33 @@ backup_binlogs() {
     done
     
     # Save binary log info for PITR
-    echo "$binlog_info" > "$binlog_backup_dir/binlog_info.txt"
+    # Update the binlog_info.txt file with the current timestamp to keep track of the last update
+    echo "# Last updated: $(date +"$DATE_FORMAT")" > "$binlog_backup_dir/binlog_info.txt"
+    echo "$binlog_info" >> "$binlog_backup_dir/binlog_info.txt"
     
-    # Add backup metadata
-    echo "Backup Type: binlog" > "$binlog_backup_dir/backup_metadata.txt"
-    echo "Backup Date: $(date +"$DATE_FORMAT")" >> "$binlog_backup_dir/backup_metadata.txt"
-    echo "Binary Logs: $copied_count of $binlog_count" >> "$binlog_backup_dir/backup_metadata.txt"
-    echo "Current Log: $current_binlog" >> "$binlog_backup_dir/backup_metadata.txt"
+    # Update backup metadata
+    # If metadata file exists, update it, otherwise create it
+    if [[ -f "$binlog_backup_dir/backup_metadata.txt" ]]; then
+        # Update the last update time in the metadata file
+        sed -i "/^Last Update:/c\Last Update: $(date +"$DATE_FORMAT")" "$binlog_backup_dir/backup_metadata.txt"
+        sed -i "/^Binary Logs:/c\Binary Logs: $copied_count of $binlog_count" "$binlog_backup_dir/backup_metadata.txt"
+        sed -i "/^Current Log:/c\Current Log: $current_binlog" "$binlog_backup_dir/backup_metadata.txt"
+    else
+        # Create a new metadata file
+        echo "Backup Type: binlog" > "$binlog_backup_dir/backup_metadata.txt"
+        echo "Backup Date: $(date +"$DATE_FORMAT")" >> "$binlog_backup_dir/backup_metadata.txt"
+        echo "Last Update: $(date +"$DATE_FORMAT")" >> "$binlog_backup_dir/backup_metadata.txt"
+        echo "Binary Logs: $copied_count of $binlog_count" >> "$binlog_backup_dir/backup_metadata.txt"
+        echo "Current Log: $current_binlog" >> "$binlog_backup_dir/backup_metadata.txt"
+    fi
     
     if [[ "$copied_count" -eq "$binlog_count" ]]; then
         log INFO "Binary log backup completed successfully ($copied_count logs)"
-        send_notification "Binary log backup completed successfully: $binlog_backup_dir ($copied_count logs)"
+        send_notification "Binary log backup updated successfully: $binlog_backup_dir ($copied_count logs)"
         return 0
     else
         log WARN "Binary log backup completed with warnings - copied $copied_count of $binlog_count logs"
-        send_notification "Binary log backup completed with warnings: $binlog_backup_dir ($copied_count of $binlog_count logs)"
+        send_notification "Binary log backup updated with warnings: $binlog_backup_dir ($copied_count of $binlog_count logs)"
         
         if [[ "$IGNORE_ERRORS" -eq 1 ]]; then
             return 0
